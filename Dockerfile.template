@@ -1,0 +1,37 @@
+# TokenBench snapshot container template (Chunk 4 deliverable #2).
+#
+# One image per pinned repo. Built by `scripts/build_images.py`, which
+# renders this template with build-args and bakes the verified snapshot
+# tree at /repo. The image is the *distribution unit* for byte-identical
+# state — providers continue to run on the host against /repo extracted
+# from the image, but a stranger can pull-and-extract on any machine.
+#
+# Build args:
+#   REPO_SHORT_ID    e.g. click
+#   REPO_COMMIT      git commit pinned at dataset_version freeze
+#   SNAPSHOT_SHA256  recorded sha256 of the snapshot tree
+#   DATASET_VERSION  e.g. 1.0.0
+#
+# The verified snapshot tree must be present at the build context root
+# under ./repo/. Build script handles that.
+
+FROM python:3.14-slim
+
+ARG REPO_SHORT_ID
+ARG REPO_COMMIT
+ARG SNAPSHOT_SHA256
+ARG DATASET_VERSION
+
+LABEL org.tokenbench.repo_short_id="${REPO_SHORT_ID}"
+LABEL org.tokenbench.repo_commit="${REPO_COMMIT}"
+LABEL org.tokenbench.snapshot_sha256="${SNAPSHOT_SHA256}"
+LABEL org.tokenbench.dataset_version="${DATASET_VERSION}"
+
+WORKDIR /repo
+COPY repo/ /repo/
+
+# Sanity: the verified hash is recorded in image metadata so a stranger
+# can re-verify after extracting without consulting repo_pins.py.
+RUN echo "${SNAPSHOT_SHA256}  /repo" > /tokenbench-snapshot.sha256
+
+CMD ["true"]

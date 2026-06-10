@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+*.db
+*.sqlite
+results/runs/
+results/judge/
+# artifacts/ is mostly heavy reproducible content (repo snapshots, graph caches, usage logs).
+# SWE-QA pre-registration files (questions, candidates, human labels) MUST be tracked
+# per Chunk 5 exit gate 4 — verifiable via local git log.
+artifacts/repos/
+artifacts/graphs/
+artifacts/usage/
+artifacts/docker/
+.DS_Store
+
+# Snapshot byproducts — excluded from snapshot_sha256 hashing too.
+# See SNAPSHOT_EXCLUDE_PATTERNS in tokenbench/datasets/repo_pins.py.
+graphify-out/

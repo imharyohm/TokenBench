@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tokenbench"
+version = "0.1.0"
+description = "Codebase-context token-efficiency benchmark"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "tiktoken>=0.7",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "matplotlib>=3.8",
+    "anthropic>=0.34",
+    "python-dotenv>=1.0",
+    "rank-bm25>=0.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["tokenbench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
