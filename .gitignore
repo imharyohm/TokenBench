@@ -20,6 +20,13 @@ artifacts/repos/
 artifacts/graphs/
 artifacts/usage/
 artifacts/docker/
+# SWE-QA labeling auxiliaries (model-generated suggestions, batch shards, scratch tooling)
+# are NOT part of the pre-registration. The canonical files committed under v1.0.0 are
+# questions.jsonl, candidates.jsonl, human_labels.jsonl, human_labels_retest.jsonl.
+artifacts/swe_qa/v*/_label_batches/
+artifacts/swe_qa/v*/model_labels.*
+artifacts/swe_qa/v*/~$*
+scripts/_*.py
 .DS_Store
 
 # Snapshot byproducts — excluded from snapshot_sha256 hashing too.
