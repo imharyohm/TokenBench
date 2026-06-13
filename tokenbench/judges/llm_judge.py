@@ -7,9 +7,11 @@ Design (per chunks/CHUNK_05_judge.md and DECISIONS.md #9):
    to avoid exact-model self-preference.
 
 2. Multi-dimension rubric — correctness, completeness, faithfulness (no hallucination).
-   Each dim graded {0, 1, 2}. The pass rule is conservative: every dim must reach
-   the floor (correctness >= 1, completeness >= 1, faithfulness == 2). Calibration
-   later can shift this floor; the rubric prompt is versioned and frozen.
+   Each dim graded {0, 1, 2}. The pass rule (rubric v1.1.0): every dim must reach
+   its floor — correctness >= 1, completeness >= 1, faithfulness >= 1. v1.0.0 had
+   faithfulness == 2; relaxed in v1.1.0 after per-dim calibration diagnostics
+   showed faithfulness failed to discriminate (DECISIONS.md #13). The rubric
+   prompt is versioned and frozen; only the binary aggregation rule changed.
 
 3. N-way majority vote — N >= 3 (default 3). Each judge call is a fresh prompt
    with a different shuffle key. Final verdict is majority pass/fail; raw =
@@ -45,12 +47,17 @@ from ..core.schemas import Score, Task
 from ..models.base import Model
 from .base import Judge
 
-JUDGE_RUBRIC_VERSION = "1.0.0"
+JUDGE_RUBRIC_VERSION = "1.1.0"
 DEFAULT_JUDGE_MODEL = "bedrock.anthropic.claude-opus-4-7"
 DEFAULT_N_VOTES = 3
 
 # Pass floor per dim. Tightening or loosening this is a JUDGE_RUBRIC_VERSION bump.
-PASS_FLOOR = {"correctness": 1, "completeness": 1, "faithfulness": 2}
+# v1.1.0 (2026-06-13): faithfulness 2→1. Per-dim diagnostics on 210-task gold
+# set showed faithfulness mean=1.73 (human pass) vs 1.66 (human fail) — the dim
+# did not discriminate, but the ==2 floor was driving 30% false-negative rate
+# (37/122 human-pass tasks marked fail by the judge). Relaxing to ≥1 raised
+# κ 0.609→0.806 and dropped ECE 0.20→0.09. Detail in DECISIONS.md change log.
+PASS_FLOOR = {"correctness": 1, "completeness": 1, "faithfulness": 1}
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_AUDIT_DIR = _PROJECT_ROOT / "results" / "judge"

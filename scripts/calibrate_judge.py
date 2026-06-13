@@ -44,6 +44,8 @@ from tokenbench.datasets.swe_qa import QUESTIONS_DIR, SweQaDataset  # noqa: E402
 from tokenbench.judges.llm_judge import (  # noqa: E402
     DEFAULT_JUDGE_MODEL,
     DEFAULT_N_VOTES,
+    JUDGE_RUBRIC_VERSION,
+    PASS_FLOOR,
     LLMJudge,
 )
 from tokenbench.models.anthropic import AnthropicModel  # noqa: E402
@@ -176,12 +178,70 @@ def load_candidates(path: Path) -> dict[str, Candidate]:
     return out
 
 
+def _reuse_from_audit(
+    audit_path: Path,
+    humans: dict,
+    common: list[str],
+) -> tuple[list[bool], list[float], list[bool], list[dict]]:
+    """Recompute (judge_pass, judge_conf, human_pass, per_task) from saved
+    vote dims using the CURRENT PASS_FLOOR. No model calls. Used when the
+    rubric floor changed but the underlying votes are unchanged.
+    """
+    by_task: dict[str, list[dict]] = {}
+    with audit_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            by_task[rec["task_id"]] = rec["votes"]
+
+    missing = [tid for tid in common if tid not in by_task]
+    if missing:
+        raise ValueError(
+            f"audit log {audit_path} missing {len(missing)} task(s): "
+            f"{missing[:5]}..."
+        )
+
+    judge_pass: list[bool] = []
+    judge_conf: list[float] = []
+    human_pass: list[bool] = []
+    per_task: list[dict] = []
+    for tid in common:
+        votes = by_task[tid]
+        passes: list[bool] = []
+        for v in votes:
+            d = v["dims"]
+            if "_parse_error" in d:
+                passes.append(False)
+                continue
+            ok = all(d.get(k, 0) >= floor for k, floor in PASS_FLOOR.items())
+            passes.append(ok)
+        n = len(passes)
+        pass_count = sum(passes)
+        majority_pass = pass_count > n // 2
+        confidence = pass_count / n if n else 0.0
+        judge_pass.append(majority_pass)
+        judge_conf.append(confidence)
+        human_pass.append(humans[tid].label)
+        per_task.append({
+            "task_id": tid,
+            "human": humans[tid].label,
+            "judge": majority_pass,
+            "confidence": confidence,
+            "annotator_id": humans[tid].annotator_id,
+            "agreement": majority_pass == humans[tid].label,
+        })
+    return judge_pass, judge_conf, human_pass, per_task
+
+
 def calibrate(
     *,
     version: str,
     judge_model_name: str,
     n_votes: int,
     judge_run_id: Optional[str] = None,
+    reuse_audit: Optional[Path] = None,
 ) -> dict:
     qfile = QUESTIONS_DIR / f"v{version}" / "questions.jsonl"
     cfile = QUESTIONS_DIR / f"v{version}" / "candidates.jsonl"
@@ -204,29 +264,46 @@ def calibrate(
             file=sys.stderr,
         )
 
-    judge = LLMJudge(
-        AnthropicModel(judge_model_name),
-        n_votes=n_votes,
-        judge_run_id=judge_run_id,
-    )
+    if reuse_audit:
+        # Recompute from saved vote dims with the CURRENT PASS_FLOOR. No model
+        # calls — same judge_run_id is reused so the audit log on disk stays
+        # consistent with the new report.
+        if not reuse_audit.exists():
+            raise FileNotFoundError(f"audit log not found: {reuse_audit}")
+        run_id_from_audit = reuse_audit.stem
+        effective_run_id = judge_run_id or run_id_from_audit
+        judge_pass, judge_conf, human_pass, per_task = _reuse_from_audit(
+            reuse_audit, humans, common
+        )
+        # Stub a "judge" sentinel for the report — we don't instantiate a real
+        # one because no model calls happen.
+        class _ReusedJudge:
+            judge_run_id = effective_run_id
+        judge = _ReusedJudge()
+    else:
+        judge = LLMJudge(
+            AnthropicModel(judge_model_name),
+            n_votes=n_votes,
+            judge_run_id=judge_run_id,
+        )
 
-    judge_pass: list[bool] = []
-    judge_conf: list[float] = []
-    human_pass: list[bool] = []
-    per_task: list[dict] = []
-    for tid in common:
-        score = judge.score(tasks_by_id[tid], candidates[tid].candidate)
-        judge_pass.append(score.correct)
-        judge_conf.append(score.raw)
-        human_pass.append(humans[tid].label)
-        per_task.append({
-            "task_id": tid,
-            "human": humans[tid].label,
-            "judge": score.correct,
-            "confidence": score.raw,
-            "annotator_id": humans[tid].annotator_id,
-            "agreement": score.correct == humans[tid].label,
-        })
+        judge_pass = []
+        judge_conf = []
+        human_pass = []
+        per_task = []
+        for tid in common:
+            score = judge.score(tasks_by_id[tid], candidates[tid].candidate)
+            judge_pass.append(score.correct)
+            judge_conf.append(score.raw)
+            human_pass.append(humans[tid].label)
+            per_task.append({
+                "task_id": tid,
+                "human": humans[tid].label,
+                "judge": score.correct,
+                "confidence": score.raw,
+                "annotator_id": humans[tid].annotator_id,
+                "agreement": score.correct == humans[tid].label,
+            })
 
     kappa = cohen_kappa(human_pass, judge_pass)
     ece = expected_calibration_error(judge_conf, human_pass)
@@ -244,6 +321,9 @@ def calibrate(
         "judge_run_id": judge.judge_run_id,
         "judge_model": judge_model_name,
         "n_votes": n_votes,
+        "rubric_version": JUDGE_RUBRIC_VERSION,
+        "pass_floor": dict(PASS_FLOOR),
+        "reused_audit": str(reuse_audit) if reuse_audit else None,
         "dataset_version": version,
         "n_evaluated": len(common),
         "n_pass_human": n_pass_human,
@@ -276,6 +356,10 @@ def print_summary(report: dict) -> None:
     print("=" * 72)
     print(f"  judge_model      : {report['judge_model']}")
     print(f"  n_votes          : {report['n_votes']}")
+    print(f"  rubric_version   : {report.get('rubric_version', '?')}")
+    print(f"  pass_floor       : {report.get('pass_floor', '?')}")
+    if report.get("reused_audit"):
+        print(f"  reused_audit     : {report['reused_audit']}")
     print(f"  dataset_version  : {report['dataset_version']}")
     print(f"  n_evaluated      : {report['n_evaluated']}")
     print(f"  human pass-rate  : {report['n_pass_human']}/{report['n_evaluated']}"
@@ -307,6 +391,11 @@ def main():
                    help="Override judge run id (default: random)")
     p.add_argument("--out", type=Path, default=None,
                    help="Where to write the JSON report (default: results/judge/calibration_<id>.json)")
+    p.add_argument("--reuse-audit", type=Path, default=None,
+                   help="Recompute κ/ECE from a prior judge run's saved vote dims, "
+                        "applying the CURRENT PASS_FLOOR. No model calls. Use this "
+                        "after a JUDGE_RUBRIC_VERSION bump that changes only the "
+                        "binary aggregation rule (e.g. v1.0.0 → v1.1.0).")
     args = p.parse_args()
 
     report = calibrate(
@@ -314,8 +403,10 @@ def main():
         judge_model_name=args.judge_model,
         n_votes=args.n_votes,
         judge_run_id=args.judge_run_id,
+        reuse_audit=args.reuse_audit,
     )
-    out = args.out or REPORT_DIR / f"calibration_{report['judge_run_id']}.json"
+    suffix = f"_rubric{report['rubric_version']}" if args.reuse_audit else ""
+    out = args.out or REPORT_DIR / f"calibration_{report['judge_run_id']}{suffix}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str))
     print(f"\nWrote report → {out}")

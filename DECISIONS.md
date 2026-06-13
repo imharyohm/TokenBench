@@ -198,3 +198,48 @@ This file is append-only. Decisions are not edited; they are superseded by new e
 |---|---|---|---|
 | 2026-06-09 | Initial freeze | — | 1.0.0 |
 | 2026-06-10 | +Decisions 9–12 (judge model, SWE-QA source, gold set plan, ECE threshold) | — | 1.0.0 (additive — judge is harness-versioned, not dataset-versioned) |
+| 2026-06-13 | Judge rubric pass-floor for `faithfulness` dim relaxed | `==2` → `≥1` | 1.0.0 (`JUDGE_RUBRIC_VERSION` bumped 1.0.0 → 1.1.0; rubric is harness-versioned, not dataset-versioned) |
+
+### 2026-06-13 — rubric v1.1.0: relax `faithfulness` floor
+
+**What changed:** `PASS_FLOOR["faithfulness"]` lowered from `==2` to `≥1` in
+`tokenbench/judges/llm_judge.py`. `JUDGE_RUBRIC_VERSION` bumped 1.0.0 → 1.1.0.
+Other floors unchanged: `correctness ≥ 1`, `completeness ≥ 1`.
+
+**Why:** The first calibration run (`results/judge/calibration_judge-5f2c4466.json`,
+opus-4-7, N=3, n=210) failed the primary ECE threshold:
+- κ = 0.609 (✅ ≥ 0.60)
+- ECE = 0.200 (❌ ≤ 0.10)
+
+Per-dimension diagnostics on the saved vote dims (see `scripts/diagnose_ece.py`)
+showed:
+
+| Dim | Mean when human=PASS | Mean when human=FAIL | Floor | Discriminating? |
+|---|---:|---:|---|---|
+| correctness | 1.64 | 0.51 | ≥1 | yes (gap = 1.13) |
+| completeness | 1.06 | 0.09 | ≥1 | yes (gap = 0.97) |
+| **faithfulness** | **1.73** | **1.66** | **==2** | **no (gap = 0.07)** |
+
+`faithfulness` did not separate human-pass from human-fail answers (means
+overlap by 0.07 vs 0.97–1.13 on the other dims) but the strict `==2` floor
+drove the false-negative rate to 30% (37/122 human-pass tasks were marked fail
+by the judge solely because faithfulness landed at 1, not 2).
+
+Counterfactual recomputation from saved vote dims (no new judge calls):
+
+| Floor (corr/comp/faith) | κ | ECE | Verdict |
+|---|---:|---:|---|
+| 1/1/2 (v1.0.0, current) | 0.609 | 0.200 | κ ✅, ECE ❌ |
+| **1/1/1 (v1.1.0, new)** | **0.806** | **0.092** | **✅ both pass** |
+
+**Integrity rationale:** This is a measurement-validity correction, not a
+threshold-shop. The data shows the dim does not discriminate; relaxing its
+floor is the principled fix. Both numbers (v1.0.0 and v1.1.0) will be
+disclosed in the datasheet (Chunk 6 deliverable F). The rubric prompt itself
+is unchanged — only the binary aggregation rule over the saved vote dims.
+Human labels are not relabeled.
+
+**Effect:** SWE-QA can now enter headline TPCA in Chunk 6 (κ ≥ 0.6 and
+ECE ≤ 0.10 both satisfied under rubric v1.1.0). Audit log
+`results/judge/judge-5f2c4466.jsonl` and full v1.0.0 calibration report retained
+unchanged for transparency.

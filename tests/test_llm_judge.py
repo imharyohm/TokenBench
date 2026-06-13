@@ -94,12 +94,23 @@ def test_majority_2_of_3_pass(tmp_path: Path):
     assert score.raw == pytest.approx(2.0 / 3.0)
 
 
-def test_pass_floor_faithfulness_must_be_2(tmp_path: Path):
-    """faithfulness=1 trips the floor even with high other dims."""
+def test_pass_floor_faithfulness_at_one_passes_under_v1_1_0(tmp_path: Path):
+    """Under JUDGE_RUBRIC_VERSION=1.1.0 the faithfulness floor is >=1 (not ==2).
+
+    DECISIONS.md #13: per-dim diagnostics on the 210-task gold set showed
+    faithfulness failed to discriminate human-pass from human-fail (gap 0.07
+    vs 0.97-1.13 on the other dims). The strict ==2 floor was the dominant
+    source of false negatives. v1.1.0 relaxes faithfulness to >=1; this test
+    pins that behavior so a future rubric bump shows up here.
+    """
     model = _ScriptedModel("opus-test", [_vote(2, 2, 1)] * 3)
     judge = LLMJudge(model, n_votes=3, audit_dir=tmp_path)
     score = judge.score(_task(), "candidate")
-    assert score.correct is False  # all 3 votes individually fail
+    assert score.correct is True
+    # faithfulness=0 still trips the floor
+    model0 = _ScriptedModel("opus-test", [_vote(2, 2, 0)] * 3)
+    judge0 = LLMJudge(model0, n_votes=3, audit_dir=tmp_path)
+    assert judge0.score(_task(), "candidate").correct is False
 
 
 def test_correctness_floor(tmp_path: Path):
