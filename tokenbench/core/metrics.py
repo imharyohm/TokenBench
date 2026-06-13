@@ -119,6 +119,171 @@ def bootstrap_ci(
 
 
 @dataclass(frozen=True)
+class PairedUplift:
+    """Paired accuracy uplift of `a` over `b`, on the SAME (task, repeat) pairs.
+
+    `n` is the number of paired observations after intersection. `mean` is
+    `mean(correct_a - correct_b)` per pair (range [-1, +1]). `ci` is a
+    percentile bootstrap CI on that mean. `wins` / `ties` / `losses` count
+    pairs where `a > b` / `a == b` / `a < b`.
+    """
+    n: int
+    mean: float
+    ci_low: float
+    ci_high: float
+    wins: int
+    ties: int
+    losses: int
+
+
+def paired_uplift_ci(
+    records_a: Sequence[RunRecord],
+    records_b: Sequence[RunRecord],
+    *,
+    n_resamples: int = 10_000,
+    confidence: float = 0.95,
+    seed: int = 0,
+) -> PairedUplift:
+    """Paired bootstrap on `acc(a) - acc(b)` over the (task_id, repeat) pairs
+    that appear in BOTH inputs. Records that don't have a partner are dropped.
+
+    Used to verify Chunk 6 exit gate 2 (exploit baseline must not exceed the
+    priors-only floor by more than a documented tolerance) without confounding
+    "the model knows public Python" with "the harness leaked gold."
+    """
+    a_map = {(r.task_id, r.repeat): int(r.score.correct) for r in records_a}
+    b_map = {(r.task_id, r.repeat): int(r.score.correct) for r in records_b}
+    keys = sorted(set(a_map) & set(b_map))
+    if not keys:
+        return PairedUplift(0, 0.0, 0.0, 0.0, 0, 0, 0)
+    diffs = np.array([a_map[k] - b_map[k] for k in keys], dtype=float)
+    wins = int((diffs > 0).sum())
+    losses = int((diffs < 0).sum())
+    ties = int((diffs == 0).sum())
+    rng = np.random.default_rng(seed)
+    n = len(diffs)
+    idx = rng.integers(0, n, size=(n_resamples, n))
+    boots = diffs[idx].mean(axis=1)
+    alpha = (1 - confidence) / 2
+    return PairedUplift(
+        n=n,
+        mean=float(diffs.mean()),
+        ci_low=float(np.quantile(boots, alpha)),
+        ci_high=float(np.quantile(boots, 1 - alpha)),
+        wins=wins,
+        ties=ties,
+        losses=losses,
+    )
+
+
+@dataclass(frozen=True)
+class IsoAccuracyPoint:
+    """Tokens needed (per query, at amortization V) for a method to reach
+    a target accuracy.
+
+    `tokens` is None when the method never reached `target_acc`; in that
+    case `acc_reached` records the highest accuracy the method actually
+    achieved on this set of records, so plots can render an under-target
+    marker rather than a hole.
+    """
+    method: str
+    target_acc: float
+    V: float
+    tokens: float | None
+    acc_reached: float
+
+
+@dataclass(frozen=True)
+class IsoBudgetPoint:
+    """Accuracy a method reaches when its per-query tokens (at amortization
+    V) are constrained to `budget_tokens`.
+
+    `feasible=False` means the method's tokens/query exceeds the budget
+    even after amortization, so accuracy at this budget is undefined.
+    """
+    method: str
+    budget_tokens: float
+    V: float
+    accuracy: float
+    tokens_used: float
+    feasible: bool
+
+
+def iso_accuracy_tokens(
+    records_by_method: dict[str, Sequence[RunRecord]],
+    target_acc: float,
+    *,
+    V: float = 1.0,
+) -> list[IsoAccuracyPoint]:
+    """For each method, return the tokens/query (at amortization V) needed
+    to reach `target_acc`, or None if the method never gets there.
+
+    Static methods produce a single (acc, tokens) point at any given V (no
+    knob to tune), so "reaches the target" is binary: did the method's
+    accuracy on this record set hit target_acc?
+
+    This is the simplest faithful definition for v1.0's static-only
+    provider lineup. Once an agentic provider lands (G, deferred to v1.1),
+    this signature will need an "iso curve" — accuracy as a function of
+    the agent's compute budget — and the function will return a curve
+    rather than a single point.
+    """
+    out: list[IsoAccuracyPoint] = []
+    for name in sorted(records_by_method):
+        recs = list(records_by_method[name])
+        if not recs:
+            continue
+        acc = accuracy(recs)
+        per = per_record_tokens(recs, V=V)
+        mean_tokens = float(np.mean(per)) if per else 0.0
+        if acc >= target_acc:
+            out.append(IsoAccuracyPoint(
+                method=name, target_acc=target_acc, V=V,
+                tokens=mean_tokens, acc_reached=acc,
+            ))
+        else:
+            out.append(IsoAccuracyPoint(
+                method=name, target_acc=target_acc, V=V,
+                tokens=None, acc_reached=acc,
+            ))
+    return out
+
+
+def iso_budget_accuracy(
+    records_by_method: dict[str, Sequence[RunRecord]],
+    budget_tokens: float,
+    *,
+    V: float = 1.0,
+) -> list[IsoBudgetPoint]:
+    """For each method, report the accuracy reached when per-query tokens
+    (at amortization V) are constrained to `budget_tokens`.
+
+    For static methods, tokens/query at fixed V is a method property, not
+    a tunable knob — so the result is `feasible=True, accuracy=<observed>`
+    if `mean_tokens <= budget`, else `feasible=False`.
+
+    This is the operational complement of iso-accuracy: instead of "how
+    many tokens to reach acc?", "what acc fits in this many tokens?" Both
+    are reported alongside the headline TPCA curve.
+    """
+    out: list[IsoBudgetPoint] = []
+    for name in sorted(records_by_method):
+        recs = list(records_by_method[name])
+        if not recs:
+            continue
+        acc = accuracy(recs)
+        per = per_record_tokens(recs, V=V)
+        mean_tokens = float(np.mean(per)) if per else 0.0
+        feasible = mean_tokens <= budget_tokens
+        out.append(IsoBudgetPoint(
+            method=name, budget_tokens=budget_tokens, V=V,
+            accuracy=acc if feasible else 0.0,
+            tokens_used=mean_tokens, feasible=feasible,
+        ))
+    return out
+
+
+@dataclass(frozen=True)
 class ParetoPoint:
     method: str
     accuracy: float

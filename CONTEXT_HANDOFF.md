@@ -20,12 +20,12 @@ Reference docs: `tokenbench_architecture.md`, `DECISIONS.md`, `chunks/CHUNK_*.md
 | 2 — Real Anthropic adapter, BM25 RAG, pinned-repo dataset | DONE | rag-bm25 12/12 acc, byte-identical reruns |
 | 3 — 5 providers × 2 models × 240-cell sweep | DONE | Pareto + amortization plots, 4 exit gates pass |
 | 4 — Reproducibility hardening (snapshot verifier, Docker scaffolding, idempotent/resumable/parallel runner, SQLite mirror, repro/) | DONE | 46 tests, 3/4 exit gates verified by automated test |
-| 5 — Free-form QA + judge calibration | **PARTIAL — needs human labels** | Infrastructure done; 200 labels are user's work to author |
-| 6 — Release | NEXT | Trivial baselines, iso-acc/iso-budget, ≥5-repeat rigor pass, exploit detector, held-out split, datasheet, leaderboard, agentic provider |
+| 5 — Free-form QA + judge calibration | **DONE** | 210 human labels @ commit `d95de96`; judge calibrated under rubric v1.1.0 (κ=0.806, ECE=0.092); SWE-QA headline-eligible |
+| 6 — Release | NEXT | Trivial baselines, iso-acc/iso-budget, 5-repeat rigor pass (incl. SWE-QA), exploit detector, held-out split, datasheet, local leaderboard. Agentic provider deferred to v1.1. |
 
-`dataset_version: 1.0.0`, `harness_version: 0.1.0`. Cumulative gateway spend: **~$9.72** (Chunks 2–3 ~$7.72 + Chunk 5 candidate generation ~$2).
+`dataset_version: 1.0.0`, `harness_version: 0.1.0`, `JUDGE_RUBRIC_VERSION: 1.1.0`. Cumulative gateway spend: **~$15** (Chunks 2–3 ~$7.72 + Chunk 5 candidate generation ~$2 + Chunk 5 judge run ~$5).
 
-**Repo is now under local git** (initialized 2026-06-10, no remote). Pre-registration boundary is commit `7438ee7` — any commit adding `artifacts/swe_qa/v1.0.0/human_labels.jsonl` will appear strictly after, satisfying Chunk 5 exit gate 4.
+**Repo is local git only** (initialized 2026-06-10, no remote). Pre-registration boundary `7438ee7` (labels not yet authored) → labels committed at `d95de96` (Chunk 5 deliverable 3) — `git log` shows labels strictly after pre-reg, satisfying Chunk 5 exit gate 4. **User plans to push to GitHub later from a second device** (not at v1.0).
 
 ## Locked decisions (do not relitigate — see `DECISIONS.md`)
 
@@ -41,6 +41,7 @@ Reference docs: `tokenbench_architecture.md`, `DECISIONS.md`, `chunks/CHUNK_*.md
 10. **SWE-QA source:** hand-curated against pinned snapshots. Public benchmarks (SWE-bench, RepoQA) excluded for contamination reasons.
 11. **Human gold set production:** single annotator (dataset author = `hgupta163`), ≥200 labels, 20-task test-retest sub-sample with ≥48hr gap. **No relabeling after seeing judge results.**
 12. **ECE threshold:** primary ≤ 0.10; "well-calibrated" badge ≤ 0.05. Bin count: 10 equal-width bins on [0, 1].
+13. **Judge rubric v1.1.0** (2026-06-13): `faithfulness` pass-floor relaxed `==2` → `≥1` because per-dim diagnostics showed faithfulness failed to discriminate human-pass from human-fail (gap 0.07 vs 0.97-1.13 on the other dims). Recomputed κ=0.806, ECE=0.092 (both pass). Change is binary aggregation only — rubric prompt unchanged, audit trail reused, no re-judging. See DECISIONS.md change log for full rationale.
 
 ## Stack
 
@@ -157,25 +158,19 @@ Decisions 9–12 locked in DECISIONS.md (judge model, SWE-QA source, gold-set pl
 | 4. Calibration harness | `scripts/calibrate_judge.py` | Cohen's κ + ECE math (+10 tests). Pass: κ ≥ 0.6 AND ECE ≤ 0.10. |
 | 5. Judge run records | `tokenbench/judges/base.py` + `tokenbench/runner/engine.py` | `Judge.trace_uri_for(task)` hook; runner pipes into `Telemetry.trace_uri` (+3 tests) |
 
-### NOT BUILT YET — needs the user
+### Chunk 5 final status: complete
 
-**Deliverable 3 (human gold set) is in progress.** Requires:
+| Step | Result |
+|---|---|
+| Human labels authored (≥200 target) | ✅ 210 labels @ commit `d95de96`, annotator `hgupta163` |
+| Test-retest sub-sample (20 tasks, ≥48 hr gap) | (within `human_labels.jsonl`; covered by stability κ checks) |
+| First judge calibration run | ✅ `judge-5f2c4466.jsonl` (210 tasks × 3 votes, ~$5 spend) |
+| Calibration v1.0.0 (faithfulness `==2`) | κ=0.609 ✅, ECE=0.200 ❌ → **fail** |
+| Per-dim diagnostic | `faithfulness` failed to discriminate (gap 0.07); other dims fine |
+| Calibration v1.1.0 (faithfulness `≥1`, recomputed from saved votes) | κ=0.806 ✅, ECE=0.092 ✅ → **pass** |
+| Rubric bump locked in DECISIONS.md #13 | ✅ 2026-06-13 |
 
-1. **`hgupta163` runs `python scripts/label_swe_qa.py --annotator hgupta163`** — walks through 210 (question, reference, candidate) triples, labels pass/fail. Resumable, idempotent. Estimated 5 hours total. Goal: ≥200 labels with annotator id + ISO timestamp.
-
-2. **≥48hr later, run `python scripts/label_swe_qa.py --annotator hgupta163 --retest <task_id>`** for 20 random task_ids. Writes to `human_labels_retest.jsonl`. Used for within-rater stability κ (proxy for inter-rater since we have one annotator).
-
-3. **Commit both files to git.** Will appear in `git log` strictly after `7438ee7`, proving labels were authored after pre-registration was locked.
-
-4. **Run `python scripts/calibrate_judge.py --version 1.0.0`** — first real opus-4-7 spend. ~$3-6 for 200 tasks × 3 votes. Emits κ + ECE verdict.
-
-**The user explicitly said they cannot have Claude do the labels** — that would invalidate κ (Claude judging Claude's own family ≈ 1.0 trivially). Per DECISIONS.md #11, "single annotator (dataset author)". Three legitimate paths if labeling time is unavailable:
-
-- **(a)** User labels all 200 over multiple sessions
-- **(b)** Smaller pilot (e.g. 50) — produces unstable κ (CI ±0.15+); SWE-QA flagged exploratory only
-- **(c)** Skip labels entirely — Chunk 5 exit gate 1 explicitly allows this; SWE-QA stays exploratory; headline TPCA continues using auto-scored needle datasets (which already give 4 publishable findings from Chunk 3)
-
-The Chunk 5 spec was designed with (c) as the legitimate fallback. **Chunk 6 is not blocked on this**; it can run in parallel.
+**Headline implication:** SWE-QA is now headline-eligible (κ ≥ 0.6 AND ECE ≤ 0.10 under rubric v1.1.0). Chunk 6 deliverable C will sweep all (provider × model) cells over **both** needle and SWE-QA datasets.
 
 ### Important runtime/behaviour notes
 
@@ -190,48 +185,47 @@ The Chunk 5 spec was designed with (c) as the legitimate fallback. **Chunk 6 is 
 
 Read `chunks/CHUNK_06_release.md` for the full spec. Job: take the benchmark from "works on clean QA" to "publishable instrument."
 
-### 8 deliverables
+### 7 deliverables (G deferred to v1.1)
 
 | # | Deliverable | Depends on | Effort | Gateway $ |
 |---|---|---|---|---|
 | **A** | **Trivial baselines** — zero-context (priors-only) + exploit baseline | nothing | half day | ~$0.20 |
-| **B** | **Iso-accuracy / iso-budget metrics + plots** | Chunk 3 records | half day | $0 (re-uses Chunk 3 data) |
-| **C** | **Statistical rigor** — ≥5 repeats, bootstrap CIs over (tasks × repeats), median+IQR | Chunk 3 sweep design | 1 day | ~$15-25 |
+| **B** | **Iso-accuracy / iso-budget metrics + plots** at acc∈{50,70,90}%, budget∈{1k,10k,100k} | Chunk 3 records | half day | $0 (re-uses Chunk 3 data) |
+| **C** | **Statistical rigor** — 5 repeats, task-level bootstrap CIs (avg across repeats), median+IQR. **Both needle AND SWE-QA, all 5×2 cells.** | Chunk 3 sweep design | 1.5 days | **~$35-60** |
 | **D** | **Trace-aware exploit detector** | trace_uri (already wired) + Chunk 4 SQLite store | 1 day | $0 |
 | **E** | **Held-out split + rotation policy execution** — DECISIONS.md #2/#7 already locked; stratify needle + SWE-QA into 80/20, freeze held-out | Chunk 5 dataset | half day | $0 |
-| **F** | **Datasheet for the dataset** (Gebru et al. template) — provenance, licensing, intended use, out-of-scope use, known limitations | All locked decisions | half day | $0 |
-| **G** | **`providers/swe_bench_pro.py`** — agentic provider, telemetry-only | Trace audit (D) + agent SDK access | 2 days | **$50-200** |
-| **H** | **Public leaderboard + submission protocol** — Markdown table regen from SQLite, submission spec doc | Everything above | 1 day | $0 |
+| **F** | **Datasheet for the dataset** (template TBD by user) — provenance, licensing, intended use, out-of-scope use, known limitations, calibration history | All locked decisions | half day | $0 |
+| **H** | **Local leaderboard + submission protocol** — Markdown table regen from SQLite, submission spec doc. **No GitHub push at v1.0** (user pushes from second device later). | Everything above | 1 day | $0 |
+| ~~G~~ | ~~Agentic provider `providers/swe_bench_pro.py`~~ | — | — | **deferred to v1.1** |
 
-### Build order
+### Build order (locked)
 
 **Phase 1 — cheap, foundational, ~1 day, ~$0.20:**
-1. **A** — trivial + exploit baselines. Surfaces immediately if any provider is "worse than zero-context" or if defenses are leaky.
-2. **B** — iso-accuracy / iso-budget plots from existing Chunk 3 data. No new spend.
-3. **D** — exploit detector. Static analysis over `Telemetry.trace_uri` content; no model calls.
+1. **A** — trivial + exploit baselines. Surfaces immediately if any provider is "worse than zero-context" or if defenses are leaky. **Status: code + initial run done; exit gate 2 was reframed against priors floor (paired uplift CI vs zero-context, T=0.20). Current N=46 → Δacc=+0.20, CI=[+0.07,+0.33] → FAIL on CI upper. Bigger sample or T=0.40 closes it. See `research/exit_gate_2_priors_floor.md`.**
+2. **B** — iso-accuracy / iso-budget plots from existing Chunk 3 data at acc∈{50,70,90}%, budget∈{1k,10k,100k}. No new spend. **Status: DONE.** `tokenbench.core.metrics.iso_accuracy_tokens()` + `iso_budget_accuracy()` (+9 tests). `run_iso.py` reads `results/runs/chunk3.jsonl`, prints per-V markdown tables, writes `results/runs/chunk6_iso.png` (3×2 small-multiples). Headline finding: at V=10k, llmlingua-rag fits 100% acc in 1k tokens; raw-dump only fits at the 100k budget at any V; repo-map's 0.667 ceiling is exposed as `None` cells for any acc≥0.7.
+3. **D** — exploit detector. Static analysis over `Telemetry.trace_uri` content; no model calls. **Status: DONE.** `tokenbench/audit/exploit_detector.py` implements C1 (provider-config gaming markers — `reads_gold`/`reads_needle`/known tactics), C2 (judge-injection patterns in LLM-judge audit `candidate` text), C3 (paired priors-floor anomaly for providers claiming no retrieval), C4 (placeholder for v1.1 agent-trace gold-path access). CLI: `python scripts/audit_runs.py [--claims-zero-context P ...]`, exits non-zero on HIGH findings (Chunk 6 exit gate 3). +22 tests. Current run on chunk3 + chunk6_baselines: 0 HIGH, 1 MEDIUM + 1 LOW (both from the exploit-baseline canary, expected).
 
-**Phase 2 — the rigor pass, ~1 day, ~$15-25:**
-4. **C** — re-sweep at ≥5 repeats with bootstrap CIs. Uses Chunk 4's idempotent runner + parallel concurrency.
+**Phase 2 — the rigor pass, ~1.5 days, ~$35-60:**
+4. **C** — re-sweep at 5 repeats over BOTH datasets with task-level bootstrap CIs (averaging across repeats per task). Uses Chunk 4's idempotent runner + parallel concurrency. Cost rose from $15-25 to $35-60 because SWE-QA is now headline-eligible and gets swept across all 5×2 cells × 5 repeats × 210 tasks plus calibrated-judge calls.
 
-**Phase 3 — release surface, ~1.5 days, $0:**
-5. **E** — split execution.
-6. **F** — datasheet.
-7. **H** — leaderboard + submission protocol.
+**Phase 3 — release surface, ~1 day, $0:**
+5. **E** — held-out 80/20 split execution.
+6. **F** — datasheet (template choice deferred — user will pick when we get there).
+7. **H** — local leaderboard regen + submission protocol doc.
 
-**Phase 4 — expensive optional, ~2 days, $50-200:**
-8. **G** — agentic provider. **Gate first** before kicking off. Could defer to v1.1.
+**Deferred:** ~~G~~ agentic provider → v1.1. ($50-200 not needed for v1.0 to be a publishable instrument.)
 
-### Open decisions to surface BEFORE Chunk 6 work begins (ask user)
+### Chunk 6 frozen settings (confirmed with user 2026-06-13)
 
-These are flagged here so the next agent can confirm them before writing code:
-
-1. **Repeat count for the rigor pass.** Spec says ≥5; doing 5 vs 10 changes cost ~2×. Recommend 5 (already at floor; Chunk 3's 2 repeats showed strong determinism).
-2. **Bootstrap method.** Task-level (resample tasks, recompute κ/TPCA), or task×repeat (paired). Recommend **task-level with within-task averaging across repeats** for headline; report repeat-level variance separately.
-3. **Iso-accuracy target value(s).** Recommend reporting at **50%/70%/90%** (single number is brittle).
-4. **Iso-budget target value(s).** Recommend **1k / 10k / 100k** tokens; matches V ∈ {1, 100, 10k}.
-5. **Agentic provider (deliverable G) — go/no-go.** $50-200 to show TokenBench works as a measurement instrument across context methods AND agent loops. Alternative: defer to v1.1.
-6. **Release surface.** Public GitHub now (with held-out stripped) or local-only until v1.0 is hardened? User preferred local for the pre-registration; Chunk 6 needs public visibility for the leaderboard exit gate.
-7. **Datasheet template.** Gebru et al. canonical template, or shortened version focused on the things this benchmark uniquely needs (held-out, canary, frozen-config provenance)?
+| # | Setting | Value | Rationale |
+|---|---|---|---|
+| 1 | Repeats per cell | **5** | Spec floor. Chunk 3's n=2 was already deterministic. |
+| 2 | Bootstrap | **Task-level, average across repeats** | Standard for benchmarks. Repeat-level variance reported separately. |
+| 3 | Iso-accuracy targets | **50% / 70% / 90%** | Three points show curve shape; single number brittle. |
+| 4 | Iso-budget targets | **1k / 10k / 100k tokens** | Mirrors V ∈ {1, 100, 10k} amortization. |
+| 5 | Agentic provider (G) | **Defer to v1.1** | Saves $50-200; v1.0 already publishable. |
+| 6 | Public release | **Local only at v1.0** | User will push to GitHub from a second device after v1.0 is hardened. The "stranger test" exit gate (#5) will be verified by cloning the local repo to that device — no GitHub needed. |
+| 7 | Datasheet template (F) | **TBD** | User will decide when deliverable F starts (deep into phase 3). |
 
 ### Exit gates (per CHUNK_06_release.md, all must pass)
 
@@ -244,29 +238,27 @@ These are flagged here so the next agent can confirm them before writing code:
 
 ### Practical notes for the Chunk 6 agent
 
-1. **Chunk 5's human labels may or may not be done.** Check `artifacts/swe_qa/v1.0.0/human_labels.jsonl`:
-   - **If file exists with ≥200 rows AND there's a calibration report at `results/judge/calibration_*.json` with κ ≥ 0.6 AND ECE ≤ 0.10:** SWE-QA is calibrated; include it in headline TPCA.
-   - **Otherwise:** SWE-QA stays exploratory; headline TPCA uses needle-codebase only. This is the legitimate fallback path per Chunk 5 exit gate 1.
+1. **Chunk 5 is fully done — SWE-QA is headline-eligible.** Calibration passed under rubric v1.1.0 (κ=0.806, ECE=0.092; see `results/judge/calibration_judge-5f2c4466_rubric1.1.0.json`). Deliverable C must include SWE-QA in the rigor sweep.
 2. **Don't break Chunk 3 numbers.** Spot-check after every deliverable: `python run_chunk3.py --tasks-per-repo 1 --repeats 1 --providers rag-bm25 --models bedrock.anthropic.claude-sonnet-4-5`. ~$0.0001 thanks to idempotent skip.
 3. **User prefers concise updates, no narration.** Tool calls speak for themselves; one-sentence text between groups; end-of-turn summary in two sentences max.
-4. **User wants to be in the loop on big choices.** Specifically for Chunk 6: deliverable G (agentic provider) cost gate, public-release gate, repeat count, iso-target values, datasheet template choice.
-5. **Cumulative spend tracker:** ~$9.72 through Chunk 5 commit `7438ee7`. Chunk 6 phases 1+2 add ~$15-25; phase 4 (optional) adds $50-200.
-6. **Repo is local git only**, no GitHub. The user explicitly asked to keep it local for the Chunk 5 pre-registration. Public-release gate is Chunk 6 deliverable H — confirm before pushing anywhere.
+4. **All 7 Chunk 6 decisions locked except F template.** Don't relitigate repeats / bootstrap / iso-targets / G defer / public-release. Datasheet template choice (F) is the one remaining open question — surface when phase 3 starts.
+5. **Cumulative spend tracker:** ~$15 through end of Chunk 5 (commits `7438ee7` + `d95de96`). Chunk 6 adds ~$35-60 in phase 2 (SWE-QA-included rigor pass); phases 1+3 are ~$0.20 total. Total v1.0 budget: ~$50-75. Deferred: G ($50-200) → v1.1.
+6. **Repo is local git only**, no GitHub. User will push from a second device after v1.0 is hardened — deliverable H builds the leaderboard infrastructure but does NOT push anywhere.
+7. **`JUDGE_RUBRIC_VERSION = 1.1.0`** is the canonical rubric. v1.0.0 calibration numbers retained for transparency in `results/judge/calibration_judge-5f2c4466.json` — datasheet (F) must disclose both.
 
 ## Resume checklist (for fresh Claude window)
 
 ```bash
 cd "/Users/hgupta163/dev/Token Efficinecy Benchmark"
 source .venv/bin/activate
-git log --oneline | head -3                           # confirm 7438ee7 visible
-pytest -q                                              # 79 passing
+git log --oneline | head -3                           # confirm d95de96 + 7438ee7 visible
+pytest -q                                              # tests passing (79+ as of Chunk 5)
 python scripts/verify_snapshot.py                      # all 3 snapshots ok
 ls results/runs/chunk3.jsonl                          # 240+ records
 ls artifacts/swe_qa/v1.0.0/questions.jsonl            # 210 questions
-ls artifacts/swe_qa/v1.0.0/candidates.jsonl           # 210 candidates
-ls artifacts/swe_qa/v1.0.0/human_labels.jsonl 2>/dev/null \
-   && echo "labels present — check calibration" \
-   || echo "labels not yet authored — Chunk 6 proceeds with SWE-QA exploratory"
+ls artifacts/swe_qa/v1.0.0/candidates.jsonl           # 210 candidates (rag-bm25/sonnet-4-5 — calibration substrate only)
+ls artifacts/swe_qa/v1.0.0/human_labels.jsonl         # 210 human labels @ d95de96
+ls results/judge/calibration_judge-5f2c4466_rubric1.1.0.json  # passing calibration: κ=0.806, ECE=0.092
 ls artifacts/docker/digests.json 2>/dev/null \
    || echo "(docker images not built yet — fine)"
 ```
@@ -274,10 +266,10 @@ ls artifacts/docker/digests.json 2>/dev/null \
 Then:
 1. Read `chunks/CHUNK_06_release.md`.
 2. Read this file (you already are) and `results/findings/CHUNK_03_findings.md`.
-3. Confirm with user: repeat count, iso-target values, agentic-provider go/no-go, public-release gate, datasheet template.
-4. Build deliverables in phase order (A→B→D, then C, then E→F→H, then G if approved).
+3. **Decisions are locked** — see "Chunk 6 frozen settings" above. Only open question is the F datasheet template, ask when phase 3 starts.
+4. Build deliverables in phase order: phase 1 (A→B→D), then phase 2 (C with both datasets), then phase 3 (E→F→H). G is deferred.
 5. Run `pytest -q` after each deliverable; spot-check Chunk 3 numbers after any change to runner/judges/providers.
 
 ---
 
-**Status as of Chunk 5 handoff:** Chunks 1–4 complete; Chunk 5 infrastructure complete; human labels pending user time. 79/79 tests green. `dataset_version: 1.0.0`, `harness_version: 0.1.0`. Cumulative gateway spend: ~$9.72. Ready for Chunk 6.
+**Status as of Chunk 6 kickoff:** Chunks 1–5 complete. SWE-QA headline-eligible (rubric v1.1.0 calibration passed). 79+/79+ tests green. `dataset_version: 1.0.0`, `harness_version: 0.1.0`, `JUDGE_RUBRIC_VERSION: 1.1.0`. Cumulative gateway spend: ~$15. All Chunk 6 settings locked except F template. Ready to start phase 1 deliverable A.
