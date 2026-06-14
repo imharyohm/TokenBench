@@ -20,6 +20,8 @@ artifacts/repos/
 artifacts/graphs/
 artifacts/usage/
 artifacts/docker/
+# Held-out split manifests — DECISIONS.md #2: never distribute.
+artifacts/_heldout/
 # SWE-QA labeling auxiliaries (model-generated suggestions, batch shards, scratch tooling)
 # are NOT part of the pre-registration. The canonical files committed under v1.0.0 are
 # questions.jsonl, candidates.jsonl, human_labels.jsonl, human_labels_retest.jsonl.
