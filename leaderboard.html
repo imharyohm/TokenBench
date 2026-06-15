@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TokenBench v1.0.0 Leaderboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #0f1117;
+      color: #e2e8f0;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 0.4rem;
+    }
+    .meta {
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-bottom: 1.2rem;
+      font-family: monospace;
+    }
+    .note {
+      background: #1e293b;
+      border-left: 3px solid #3b82f6;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      font-size: 0.84rem;
+      color: #94a3b8;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+    .note strong { color: #cbd5e1; }
+    h2 {
+      font-size: 1.2rem;
+      color: #f1f5f9;
+      margin: 2rem 0 0.5rem;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    h3 {
+      font-size: 1rem;
+      color: #94a3b8;
+      margin: 1.2rem 0 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.8rem;
+    }
+    .pareto-note {
+      font-size: 0.76rem;
+      color: #64748b;
+      margin-top: 0.4rem;
+      font-style: italic;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+      margin-bottom: 0.5rem;
+    }
+    thead th {
+      background: #1e293b;
+      color: #94a3b8;
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #334155;
+      white-space: nowrap;
+    }
+    thead th.num { text-align: right; }
+    tbody tr {
+      border-bottom: 1px solid #1a2332;
+      transition: background 0.1s;
+    }
+    tbody tr:hover { background: #1e293b; }
+    tbody td {
+      padding: 0.5rem 0.75rem;
+      color: #cbd5e1;
+      white-space: nowrap;
+    }
+    tbody td.num { text-align: right; font-family: monospace; }
+    tbody td.ci { font-size: 0.75rem; color: #64748b; font-family: monospace; }
+    .star { color: #f59e0b; font-size: 1rem; }
+    .provider-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: monospace;
+    }
+    .p-rag-bm25    { background: #1d4ed8; color: #bfdbfe; }
+    .p-repo-map    { background: #065f46; color: #6ee7b7; }
+    .p-graphify    { background: #6b21a8; color: #e9d5ff; }
+    .p-llmlingua-rag { background: #92400e; color: #fde68a; }
+    .p-raw-dump    { background: #374151; color: #d1d5db; }
+    .model-tag {
+      font-size: 0.72rem;
+      color: #64748b;
+      font-family: monospace;
+    }
+    .acc-high { color: #34d399; font-weight: 700; }
+    .acc-mid  { color: #fbbf24; }
+    .acc-low  { color: #f87171; }
+    .delta-pos { color: #f87171; }
+    .delta-neg { color: #34d399; }
+    .section-divider {
+      border: none;
+      border-top: 1px solid #1e293b;
+      margin: 2.5rem 0;
+    }
+    .private-banner {
+      background: #1c1917;
+      border: 1px solid #44403c;
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      font-size: 0.8rem;
+      color: #78716c;
+      margin-bottom: 1rem;
+    }
+    .private-banner strong { color: #a8a29e; }
+  </style>
+</head>
+<body>
+
+<h1>TokenBench v1.0.0 Leaderboard</h1>
+<div class="meta">
+  dataset_version: 1.0.0 &nbsp;·&nbsp; harness_version: 0.1.0 &nbsp;·&nbsp; JUDGE_RUBRIC_VERSION: 1.1.0
+</div>
+
+<div class="note">
+  Generated from the local run-records store. Every cell is filtered to the <strong>public split</strong> (DECISIONS.md #2). The held-out split is private and never published.<br><br>
+  <strong>Two cost columns</strong> are required by Chunk 6 spec §7: TPCA(V=1) for cold-start cost, TPCA(V=10000) for amortized cost. The right answer depends on your query volume.<br><br>
+  <strong>No single-number claim.</strong> A method's place on this table is one (accuracy, tokens) point; the curve across V is what tells you which method fits which regime.
+</div>
+
+<h2>Public-split Rankings</h2>
+
+<h3>needle (public)</h3>
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Provider</th>
+      <th>Model</th>
+      <th class="num">n cells</th>
+      <th class="num">n tasks</th>
+      <th class="num">Acc</th>
+      <th>95% CI</th>
+      <th class="num">TPCA(V=1)</th>
+      <th class="num">TPCA(V=10k)</th>
+      <th class="num">Median tok</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">257,824</td><td class="num">1,145</td><td class="num">257,839</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">257,824</td><td class="num">1,145</td><td class="num">257,839</td>
+    </tr>
+    <tr>
+      <td><span class="star">★</span></td>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">16,023</td><td class="num">8,055</td><td class="num">16,022</td>
+    </tr>
+    <tr>
+      <td><span class="star">★</span></td>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">16,023</td><td class="num">8,055</td><td class="num">16,022</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">112,934</td><td class="num">1,537</td><td class="num">112,862</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-raw-dump">raw-dump</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-high">1.000</td>
+      <td class="ci">[1.000, 1.000]</td>
+      <td class="num">80,086</td><td class="num">80,086</td><td class="num">80,084</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-mid">0.950</td>
+      <td class="ci">[0.850, 1.000]</td>
+      <td class="num">118,878</td><td class="num">1,618</td><td class="num">112,862</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-mid">0.875</td>
+      <td class="ci">[0.625, 1.000]</td>
+      <td class="num">294,061</td><td class="num">713</td><td class="num">257,306</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">40</td><td class="num">8</td>
+      <td class="num acc-mid">0.700</td>
+      <td class="ci">[0.450, 0.900]</td>
+      <td class="num">367,576</td><td class="num">891</td><td class="num">257,304</td>
+    </tr>
+  </tbody>
+</table>
+<div class="pareto-note">★ marks the Pareto frontier (accuracy vs tokens at V=1).</div>
+
+<h3>swe_qa (public)</h3>
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Provider</th>
+      <th>Model</th>
+      <th class="num">n cells</th>
+      <th class="num">n tasks</th>
+      <th class="num">Acc</th>
+      <th>95% CI</th>
+      <th class="num">TPCA(V=1)</th>
+      <th class="num">TPCA(V=10k)</th>
+      <th class="num">Median tok</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="star">★</span></td>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-mid">0.688</td>
+      <td class="ci">[0.504, 0.856]</td>
+      <td class="num">543,179</td><td class="num">1,962</td><td class="num">258,130</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-mid">0.472</td>
+      <td class="ci">[0.288, 0.656]</td>
+      <td class="num">790,724</td><td class="num">1,832</td><td class="num">257,670</td>
+    </tr>
+    <tr>
+      <td><span class="star">★</span></td>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.376</td>
+      <td class="ci">[0.208, 0.552]</td>
+      <td class="num">43,166</td><td class="num">21,983</td><td class="num">16,206</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.352</td>
+      <td class="ci">[0.184, 0.520]</td>
+      <td class="num">2,079,564</td><td class="num">6,883</td><td class="num">117,566</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.312</td>
+      <td class="ci">[0.152, 0.488]</td>
+      <td class="num">1,197,249</td><td class="num">3,797</td><td class="num">257,866</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.128</td>
+      <td class="ci">[0.024, 0.256]</td>
+      <td class="num">2,914,701</td><td class="num">5,663</td><td class="num">257,386</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.112</td>
+      <td class="ci">[0.008, 0.240]</td>
+      <td class="num">143,300</td><td class="num">72,186</td><td class="num">16,040</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">125</td><td class="num">25</td>
+      <td class="num acc-low">0.064</td>
+      <td class="ci">[0.000, 0.160]</td>
+      <td class="num">11,435,380</td><td class="num">35,636</td><td class="num">117,437</td>
+    </tr>
+  </tbody>
+</table>
+<div class="pareto-note">★ marks the Pareto frontier (accuracy vs tokens at V=1).</div>
+
+<hr class="section-divider" />
+
+<h2>Held-out Diagnostic</h2>
+<div class="private-banner">
+  <strong>Private — maintainer only.</strong> Held-out numbers are never published in releases. This section exists locally for the contamination audit per DECISIONS.md #7.<br>
+  ⚠️ marks |Δacc| &gt; 2× bootstrap CI on public — potential contamination.
+</div>
+
+<h3>needle — public vs held-out gap</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Model</th>
+      <th class="num">Acc (public)</th>
+      <th class="num">Acc (held-out)</th>
+      <th class="num">Δacc</th>
+      <th>Flag</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">1.000</td><td class="num">0.933</td>
+      <td class="num delta-pos">+0.067</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.950</td><td class="num">0.907</td>
+      <td class="num delta-pos">+0.043</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">0.875</td><td class="num">0.850</td>
+      <td class="num delta-pos">+0.025</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.700</td><td class="num">0.647</td>
+      <td class="num delta-pos">+0.053</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">1.000</td><td class="num">0.950</td>
+      <td class="num delta-pos">+0.050</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">1.000</td><td class="num">0.950</td>
+      <td class="num delta-pos">+0.050</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-raw-dump">raw-dump</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">1.000</td><td class="num">0.690</td>
+      <td class="num delta-pos">+0.310</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">1.000</td><td class="num">0.643</td>
+      <td class="num delta-pos">+0.357</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">1.000</td><td class="num">0.583</td>
+      <td class="num delta-pos">+0.417</td><td></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>swe_qa — public vs held-out gap</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Model</th>
+      <th class="num">Acc (public)</th>
+      <th class="num">Acc (held-out)</th>
+      <th class="num">Δacc</th>
+      <th>Flag</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">0.352</td><td class="num">0.209</td>
+      <td class="num delta-pos">+0.143</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-graphify">graphify</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.064</td><td class="num">0.030</td>
+      <td class="num delta-pos">+0.034</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">0.472</td><td class="num">0.502</td>
+      <td class="num delta-neg">-0.030</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-llmlingua-rag">llmlingua-rag</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.128</td><td class="num">0.098</td>
+      <td class="num delta-pos">+0.030</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">0.688</td><td class="num">0.570</td>
+      <td class="num delta-pos">+0.118</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-rag-bm25">rag-bm25</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.312</td><td class="num">0.336</td>
+      <td class="num delta-neg">-0.024</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">claude-sonnet-4-5</span></td>
+      <td class="num">0.376</td><td class="num">0.166</td>
+      <td class="num delta-pos">+0.210</td><td></td>
+    </tr>
+    <tr>
+      <td><span class="provider-badge p-repo-map">repo-map</span></td>
+      <td><span class="model-tag">gpt-4o-mini</span></td>
+      <td class="num">0.112</td><td class="num">0.021</td>
+      <td class="num delta-pos">+0.091</td><td></td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
+</html>
