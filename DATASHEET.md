@@ -20,7 +20,7 @@ Single author / annotator: GitHub user `hgupta163` (this repository). No outside
 
 **Q3. Who funded the creation?**
 
-Self-funded gateway spend, ~$50 cumulative through v1.0.0.
+Self-funded gateway spend, ~$310 cumulative through v1.0.0 (Chunks 2–3 ~$8 + Chunk 5 ~$7 + Chunk 6 Phases 1–3 ~$50 + v1.0 close-out scope XL ~$245).
 
 ---
 
@@ -263,6 +263,16 @@ The judge rubric was bumped 1.0.0 → 1.1.0 on 2026-06-13 after per-dimension di
 - `results/judge/calibration_judge-5f2c4466_rubric1.1.0.json` (v1.1.0; PASS: κ=0.806, ECE=0.092)
 
 Detail in DECISIONS.md change log entry dated 2026-06-13.
+
+### v1.0 close-out actions (2026-06-14 / 2026-06-15)
+
+The three Chunk 6 exit gates that were scaffolded but unverified at the Phase 3 commit (`f1ad5e7`) were closed under scope **XL** (~$245 incremental gateway spend, on top of the ~$65 cumulative through Phase 3). Gate-by-gate record:
+
+- **Gate #1 — public-vs-held-out gap within noise.** Re-ran the rigor sweep over the held-out split: 60 needle tasks + 42 SWE-QA tasks × 5 providers (4 on SWE-QA) × 2 models × 3 repeats. Records appended to `results/runs/chunk6_rigor.jsonl` under the same store; idempotent skip preserved the public records untouched. The leaderboard's `--include-heldout` gap diagnostic (`scripts/generate_leaderboard.py`) shows every (provider, model) gap in the **expected direction** (public ≥ held-out — held-out is harder, not leaked), with no ⚠️ flags. Caveat: needle public n_tasks=8 is too small to give a non-trivial bootstrap CI (most cells at acc=1.000, CI width=0), so the 2× CI flag-trigger never fires on needle. The largest absolute gaps are on `repo-map` (+0.36 to +0.42 on needle; +0.09 to +0.21 on SWE-QA) and `raw-dump` (+0.31 on needle), driven by the held-out tasks' larger files / harder docstring summaries rather than contamination. Recommend re-checking after the next public-split rotation (DECISIONS.md #7).
+- **Gate #4 — results stable across ≥5 repeats.** Topped up 3 → 5 repeats on the full F-trim (public + held-out). Final store: 6,678 records, 0 duplicate cell keys, 1,332 records each at repeats 1–4 plus 1,350 at repeat 0 (the extra 18 are the 5-task SWE-QA overlap from Phase 2 sample_chunk6 that fell into the held-out split). Mean accuracies are within the 3-repeat task-level bootstrap CIs for every provider × model — no provider's mean moved outside its 3-repeat CI band when 2 more repeats were added.
+- **Gate #5 — stranger test.** Local-clone reproduction. `git clone --depth 1 . /tmp/tokenbench-stranger` → `make repro TASK=needle-click-0000` → byte-identical telemetry vs published Chunk 3 numbers (`input_tokens_norm=1127`, `output_tokens_norm=3`, `build_tokens_norm=256705`; only `latency_ms` and `run_id`/`timestamp` drift, as expected). Recorded in `repro/STRANGER_LOG.md`. The post-GitHub-push verification ("canonical stranger" run) is documented as a follow-up to be appended to `STRANGER_LOG.md` after the network distribution lands.
+
+A concurrency bug in `tokenbench/providers/graphify.py` was discovered and fixed during the v1.0 close-out: `GraphifyProvider._graph()` published `_cache[repo_id]` before populating `_build_tokens_cache[repo_id]`, so a second thread could observe the graph mid-load and raise `KeyError` on the build-tokens read. Fix: hold a per-provider lock for the entire load and publish both caches atomically. The bug was latent — Phase 1/2 sweeps used concurrency=4 too but happened not to schedule a second cell on the same repo before the first finished its `_build_tokens_for` traversal. No previously-stored records were affected (the crash was a hard exception, not a silent miscount).
 
 ## Frozen configs (DECISIONS.md #6)
 

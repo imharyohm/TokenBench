@@ -28,6 +28,7 @@ that's effectively cached). Per-query = packed neighborhood.
 from __future__ import annotations
 
 import json
+import threading
 import math
 import re
 from collections import defaultdict, deque
@@ -189,9 +190,12 @@ class GraphifyProvider(Provider):
     def __init__(self):
         self._cache: dict[str, _Graph] = {}
         self._build_tokens_cache: dict[str, int] = {}
+        self._cache_lock = threading.Lock()
 
     def _graph(self, repo_id: str) -> _Graph:
-        if repo_id not in self._cache:
+        with self._cache_lock:
+            if repo_id in self._cache:
+                return self._cache[repo_id]
             path = GRAPHS_DIR / f"{repo_id}.json"
             if not path.exists():
                 raise FileNotFoundError(
@@ -199,9 +203,13 @@ class GraphifyProvider(Provider):
                     f"`cd artifacts/repos/{repo_id} && graphify update . --no-cluster && "
                     f"cp graphify-out/graph.json ../../graphs/{repo_id}.json`."
                 )
-            self._cache[repo_id] = _Graph.from_json(path)
-            self._build_tokens_cache[repo_id] = _build_tokens_for(self._cache[repo_id])
-        return self._cache[repo_id]
+            graph = _Graph.from_json(path)
+            tokens = _build_tokens_for(graph)
+            # Publish both fields together so a concurrent reader can never
+            # see the graph without its build_tokens_norm counterpart.
+            self._build_tokens_cache[repo_id] = tokens
+            self._cache[repo_id] = graph
+            return graph
 
     def build(self, task: Task) -> BuildArtifact:
         repo_id = task.meta.get("repo_id")

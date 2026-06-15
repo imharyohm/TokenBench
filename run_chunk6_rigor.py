@@ -42,7 +42,9 @@ from tokenbench.core.metrics import (
     tpca_curve,
 )
 from tokenbench.core.schemas import RunRecord
+from tokenbench.datasets.base import Dataset
 from tokenbench.datasets.needle_codebase import NeedleCodebaseDataset
+from tokenbench.datasets.splits import load_manifest
 from tokenbench.datasets.swe_qa import SweQaDataset
 from tokenbench.judges.auto_contains import AutoContainsJudge
 from tokenbench.judges.llm_judge import LLMJudge
@@ -111,6 +113,25 @@ EST_INPUT_TOKENS = {
 
 OUT_NEEDLE = 50      # bare function name + minimal padding
 OUT_SWE_QA = 200     # 3-7 sentences
+
+class _ManifestFilteredDataset(Dataset):
+    """Wraps another Dataset and yields only tasks whose task_id is in `keep`.
+
+    Used by the v1.0 close-out to run the rigor sweep against the held-out
+    split without touching the underlying NeedleCodebaseDataset code path.
+    """
+
+    def __init__(self, inner: Dataset, keep: set[str]):
+        self._inner = inner
+        self._keep = keep
+        self.name = f"{inner.name}-filtered"
+        self.dataset_version = inner.dataset_version
+
+    def tasks(self):
+        for t in self._inner.tasks():
+            if t.task_id in self._keep:
+                yield t
+
 
 JUDGE_MODEL = "bedrock.anthropic.claude-opus-4-7"
 JUDGE_N_VOTES = 3
@@ -303,6 +324,13 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="Print cost projection and exit without spending.")
     ap.add_argument("--needle-tasks-per-repo", type=int, default=8)
+    ap.add_argument(
+        "--needle-manifest", default=None,
+        help="If set, restrict needle tasks to task_ids in this manifest. "
+             "When used, --needle-tasks-per-repo is forced to 100 so the "
+             "underlying dataset enumerates the full v1.0 task list "
+             "before filtering.",
+    )
     ap.add_argument("--swe-qa-sample",
                     default="artifacts/swe_qa/v1.0.0/sample_chunk6.jsonl")
     ap.add_argument("--repeats", type=int, default=3)
@@ -317,7 +345,16 @@ def main():
     )
     args = ap.parse_args()
 
-    needle_ds = NeedleCodebaseDataset(max_tasks_per_repo=args.needle_tasks_per_repo)
+    if args.needle_manifest:
+        keep = load_manifest(Path(args.needle_manifest))
+        if not keep:
+            raise SystemExit(f"empty/missing needle manifest: {args.needle_manifest}")
+        # Force max-per-repo high enough to enumerate every v1.0 needle task
+        # before the manifest filter trims it; the freeze script used 100.
+        inner = NeedleCodebaseDataset(max_tasks_per_repo=100)
+        needle_ds: Dataset = _ManifestFilteredDataset(inner, keep)
+    else:
+        needle_ds = NeedleCodebaseDataset(max_tasks_per_repo=args.needle_tasks_per_repo)
     n_needle = sum(1 for _ in needle_ds.tasks())
     swe_qa_path = Path(args.swe_qa_sample)
     swe_qa_ds = SweQaDataset(questions_path=swe_qa_path)
